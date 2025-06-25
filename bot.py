@@ -586,7 +586,7 @@ async def listsongs(ctx):
 
     class TagSelector(discord.ui.Select):
         def __init__(self):
-            all_tags = sorted(set(tag for tags in file_tags.values() for tag in tags))
+            all_tags = sorted(set(tag for tags in file_tags.values() for tag in tag))
             options = [discord.SelectOption(label="🌈 All Songs", value="all")] + [
                 discord.SelectOption(label=tag, value=tag) for tag in all_tags[:24]
             ]
@@ -605,13 +605,13 @@ async def listsongs(ctx):
             super().__init__(timeout=60)
             self.add_item(TagSelector())
 
-        @discord.ui.button(label="⏮️ Prev", style=discord.ButtonStyle.blurple)
+        @discord.ui.button(label="⏮️ Prev", style=discord.ButtonStyle.blurple, row=1)
         async def prev_page(self, interaction: discord.Interaction, button: discord.ui.Button):
             if state.current_page > 0:
                 state.current_page -= 1
                 await interaction.response.edit_message(embed=get_page_embed(), view=self)
 
-        @discord.ui.button(label="▶️ Play This Page", style=discord.ButtonStyle.green)
+        @discord.ui.button(label="▶️ Play This Page", style=discord.ButtonStyle.green, row=1)
         async def play_page(self, interaction: discord.Interaction, button: discord.ui.Button):
             start = state.current_page * per_page
             end = start + per_page
@@ -627,7 +627,7 @@ async def listsongs(ctx):
                     await ctx.author.voice.channel.connect()
                 await play_next(ctx)
 
-        @discord.ui.button(label="🔀 Shuffle Page", style=discord.ButtonStyle.primary)
+        @discord.ui.button(label="🔀 Shuffle Page", style=discord.ButtonStyle.primary, row=1)
         async def shuffle_page(self, interaction: discord.Interaction, button: discord.ui.Button):
             start = state.current_page * per_page
             end = start + per_page
@@ -645,7 +645,7 @@ async def listsongs(ctx):
                     await ctx.author.voice.channel.connect()
                 await play_next(ctx)
 
-        @discord.ui.button(label="⏭️ Next", style=discord.ButtonStyle.blurple)
+        @discord.ui.button(label="⏭️ Next", style=discord.ButtonStyle.blurple, row=1)
         async def next_page(self, interaction: discord.Interaction, button: discord.ui.Button):
             total_pages = max(1, math.ceil(len(state.filtered_files) / per_page))
             if state.current_page < total_pages - 1:
