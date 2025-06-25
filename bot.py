@@ -558,7 +558,7 @@ async def listsongs(ctx):
         return
 
     per_page = 10
-    range_size = 25  # How many pages are in one range
+    range_size = 25
 
     class State:
         def __init__(self):
@@ -573,11 +573,7 @@ async def listsongs(ctx):
         start = state.current_page * per_page
         end = start + per_page
         page = state.filtered_files[start:end]
-
-        song_list = "\n".join(
-            f"{start + i + 1}. {song}" for i, song in enumerate(page)
-        ) or "☁️ No songs found on this page."
-
+        song_list = "\n".join(f"{start + i + 1}. {song}" for i, song in enumerate(page)) or "☁️ No songs found on this page."
         total_pages = max(1, math.ceil(len(state.filtered_files) / per_page))
         tag_title = f" – Tag: {state.selected_tag}" if state.selected_tag else ""
         embed = discord.Embed(
@@ -588,7 +584,7 @@ async def listsongs(ctx):
         embed.set_footer(text="✨ Let your playlist bloom. Use the buttons or !playnumber to select.")
         return embed
 
-    class TagSelector(Select):
+    class TagSelector(discord.ui.Select):
         def __init__(self):
             all_tags = sorted(set(tag for tags in file_tags.values() for tag in tags))
             options = [discord.SelectOption(label="🌈 All Songs", value="all")] + [
@@ -601,60 +597,38 @@ async def listsongs(ctx):
             state.selected_tag = None if choice == "all" else choice
             state.current_page = 0
             state.page_range_index = 0
-
-            if state.selected_tag:
-                state.filtered_files = [f for f in uploaded_files if state.selected_tag in file_tags.get(f, [])]
-            else:
-                state.filtered_files = uploaded_files[:]
-
+            state.filtered_files = [f for f in uploaded_files if state.selected_tag in file_tags.get(f, [])] if state.selected_tag else uploaded_files[:]
             await interaction.response.edit_message(embed=get_page_embed(), view=view)
 
-    class PageSelector(Select):
-        def __init__(self):
-            total_pages = max(1, math.ceil(len(state.filtered_files) / per_page))
-            start = state.page_range_index * range_size
-            end = min(start + range_size, total_pages)
-            options = [
-                discord.SelectOption(label=f"Page {i + 1}", value=str(i))
-                for i in range(start, end)
-            ]
-            super().__init__(placeholder="📖 Jump to page...", options=options, row=1)
-
-        async def callback(self, interaction: discord.Interaction):
-            state.current_page = int(self.values[0])
-            await interaction.response.edit_message(embed=get_page_embed(), view=view)
-
-    class PaginationView(View):
+    class PaginationView(discord.ui.View):
         def __init__(self):
             super().__init__(timeout=60)
             self.add_item(TagSelector())
-            self.add_item(PageSelector())
 
         @discord.ui.button(label="⏮️ Prev", style=discord.ButtonStyle.blurple)
-        async def prev_page(self, interaction: discord.Interaction, button: Button):
+        async def prev_page(self, interaction: discord.Interaction, button: discord.ui.Button):
             if state.current_page > 0:
                 state.current_page -= 1
                 await interaction.response.edit_message(embed=get_page_embed(), view=self)
 
         @discord.ui.button(label="▶️ Play This Page", style=discord.ButtonStyle.green)
-        async def play_page(self, interaction: discord.Interaction, button: Button):
+        async def play_page(self, interaction: discord.Interaction, button: discord.ui.Button):
             start = state.current_page * per_page
             end = start + per_page
             for filename in state.filtered_files[start:end]:
                 song_path = os.path.join(MUSIC_FOLDER, filename)
                 song_queue_by_guild[guild_id].append(song_path)
-
             await interaction.response.send_message(
-                f"🌠 Queued {end - start} songs from this page.", ephemeral=True
+                f"🎶 {end - start} melodies stirred from the ether.\n🌌 EchoMond listens, and the cosmos hums in reply...",
+                ephemeral=True
             )
-
             if not ctx.voice_client or not ctx.voice_client.is_playing():
                 if not ctx.voice_client and ctx.author.voice:
                     await ctx.author.voice.channel.connect()
                 await play_next(ctx)
 
         @discord.ui.button(label="🔀 Shuffle Page", style=discord.ButtonStyle.primary)
-        async def shuffle_page(self, interaction: discord.Interaction, button: Button):
+        async def shuffle_page(self, interaction: discord.Interaction, button: discord.ui.Button):
             start = state.current_page * per_page
             end = start + per_page
             page = state.filtered_files[start:end]
@@ -662,56 +636,45 @@ async def listsongs(ctx):
             for filename in page:
                 song_path = os.path.join(MUSIC_FOLDER, filename)
                 song_queue_by_guild[guild_id].append(song_path)
-
             await interaction.response.send_message(
-                f"🎶 {len(page)} melodies stirred from the ether.\n"
-                f"🌌 EchoMond listens, and the cosmos hums in reply...",
+                f"🔀 {len(page)} tracks shuffled and queued beneath the stars.",
                 ephemeral=True
             )
-
             if not ctx.voice_client or not ctx.voice_client.is_playing():
                 if not ctx.voice_client and ctx.author.voice:
                     await ctx.author.voice.channel.connect()
                 await play_next(ctx)
 
         @discord.ui.button(label="⏭️ Next", style=discord.ButtonStyle.blurple)
-        async def next_page(self, interaction: discord.Interaction, button: Button):
+        async def next_page(self, interaction: discord.Interaction, button: discord.ui.Button):
             total_pages = max(1, math.ceil(len(state.filtered_files) / per_page))
             if state.current_page < total_pages - 1:
                 state.current_page += 1
                 await interaction.response.edit_message(embed=get_page_embed(), view=self)
 
-        @discord.ui.button(label="🔁 Prev Range", style=discord.ButtonStyle.secondary, row=2)
-        async def prev_range(self, interaction: discord.Interaction, button: Button):
-            if state.page_range_index > 0:
-                state.page_range_index -= 1
-                self.clear_items()
-                self.add_item(TagSelector())
-                self.add_item(PageSelector())
-                self.add_item(self.prev_page)
-                self.add_item(self.play_page)
-                self.add_item(self.shuffle_page)
-                self.add_item(self.next_page)
-                self.add_item(self.prev_range)
-                self.add_item(self.next_range)
-                await interaction.response.edit_message(embed=get_page_embed(), view=self)
-
-        @discord.ui.button(label="🔁 Next Range", style=discord.ButtonStyle.secondary, row=2)
-        async def next_range(self, interaction: discord.Interaction, button: Button):
-            total_pages = max(1, math.ceil(len(state.filtered_files) / per_page))
-            max_index = (total_pages - 1) // range_size
-            if state.page_range_index < max_index:
-                state.page_range_index += 1
-                self.clear_items()
-                self.add_item(TagSelector())
-                self.add_item(PageSelector())
-                self.add_item(self.prev_page)
-                self.add_item(self.play_page)
-                self.add_item(self.shuffle_page)
-                self.add_item(self.next_page)
-                self.add_item(self.prev_range)
-                self.add_item(self.next_range)
-                await interaction.response.edit_message(embed=get_page_embed(), view=self)
+        @discord.ui.button(label="🔢 Jump to Page", style=discord.ButtonStyle.secondary, row=2)
+        async def jump_to_page(self, interaction: discord.Interaction, button: discord.ui.Button):
+            class PageJumpModal(discord.ui.Modal, title="Jump to Page"):
+                page = discord.ui.TextInput(
+                    label="Enter a page number:",
+                    placeholder="e.g. 1, 2, 3...",
+                    required=True,
+                    max_length=4
+                )
+                async def on_submit(modal_self, modal_interaction: discord.Interaction):
+                    try:
+                        total_pages = max(1, math.ceil(len(state.filtered_files) / per_page))
+                        page_num = int(str(modal_self.page).strip())
+                        if 1 <= page_num <= total_pages:
+                            state.current_page = page_num - 1
+                            await modal_interaction.response.edit_message(embed=get_page_embed(), view=self)
+                        else:
+                            await modal_interaction.response.send_message(
+                                f"⚠️ Page {page_num} isn’t in the starscape (1–{total_pages}).", ephemeral=True
+                            )
+                    except ValueError:
+                        await modal_interaction.response.send_message("🚫 Invalid input — please enter a number.", ephemeral=True)
+            await interaction.response.send_modal(PageJumpModal())
 
     view = PaginationView()
     await ctx.send(embed=get_page_embed(), view=view)
