@@ -67,7 +67,7 @@ async def help(ctx):
             choice = self.values[0]
 
             embed = discord.Embed(
-                color=discord.Color.from_str("#b9a1ff"),
+                color=discord.Color(0xb9a1ff),
                 title="🌙 EchoMond Guide – Commands Whispered in Starlight",
                 description=""
             )
@@ -124,7 +124,7 @@ async def help(ctx):
     intro_embed = discord.Embed(
         title="🌙 EchoMond Help – Let the Silence Speak",
         description="Choose a command category below and let EchoMond guide you.",
-        color=discord.Color.from_str("#b9a1ff")
+        color=discord.Color(0xb9a1ff)
     )
     intro_embed.set_footer(text="💫 A guide through moonlight and melody...")
 
@@ -548,19 +548,23 @@ async def queue(ctx):
 
 @bot.command(aliases=["whatwegot"])
 async def listsongs(ctx):
-    """Lists available uploaded songs with optional tag filter, pagination, and actions."""
+    """Lists uploaded songs with pagination, tagging filters, and celestial controls."""
     guild_id = ctx.guild.id
+    uploaded_files = uploaded_files_by_guild.get(guild_id, [])
+    file_tags = file_tags_by_guild.get(guild_id, {})
 
-    if not uploaded_files_by_guild[guild_id]:
-        await ctx.send("🌥️ No uploads yet — upload a song to begin.")
+    if not uploaded_files:
+        await ctx.send("☁️ No starlit uploads found yet — offer a melody to the cosmos.")
         return
 
     per_page = 10
+    range_size = 25  # How many pages are in one range
 
     class State:
         def __init__(self):
             self.current_page = 0
-            self.filtered_files = uploaded_files_by_guild[guild_id][:]
+            self.page_range_index = 0
+            self.filtered_files = uploaded_files[:]
             self.selected_tag = None
 
     state = State()
@@ -570,39 +574,33 @@ async def listsongs(ctx):
         end = start + per_page
         page = state.filtered_files[start:end]
 
-        song_list = ""
-        for i, song in enumerate(page):
-            song_list += f"{start + i + 1}. {song}\n"
+        song_list = "\n".join(
+            f"{start + i + 1}. {song}" for i, song in enumerate(page)
+        ) or "☁️ No songs found on this page."
 
         total_pages = max(1, math.ceil(len(state.filtered_files) / per_page))
-        title = "📂 Uploaded Songs"
-        if state.selected_tag:
-            title += f" – Tag: {state.selected_tag}"
-
+        tag_title = f" – Tag: {state.selected_tag}" if state.selected_tag else ""
         embed = discord.Embed(
-            title=f"{title} (Page {state.current_page + 1}/{total_pages})",
-            description=song_list or "☁️ No songs here yet.",
-            color=0xFFE680
+            title=f"📂 Uploaded Songs{tag_title} (Page {state.current_page + 1}/{total_pages})",
+            description=song_list,
+            color=discord.Color(0xb9a1ff)
         )
-        embed.set_footer(text="✨ Let your playlist bloom. Use !playnumber or the buttons below.")
+        embed.set_footer(text="✨ Let your playlist bloom. Use the buttons or !playnumber to select.")
         return embed
 
     class TagSelector(Select):
         def __init__(self):
-            file_tags = file_tags_by_guild[guild_id]
             all_tags = sorted(set(tag for tags in file_tags.values() for tag in tags))
             options = [discord.SelectOption(label="🌈 All Songs", value="all")] + [
-                discord.SelectOption(label=tag, value=tag) for tag in all_tags
+                discord.SelectOption(label=tag, value=tag) for tag in all_tags[:24]
             ]
-            super().__init__(placeholder="🎨 Filter by tag...", options=options)
+            super().__init__(placeholder="🎨 Filter by tag...", options=options, row=0)
 
         async def callback(self, interaction: discord.Interaction):
-            file_tags = file_tags_by_guild[guild_id]
-            uploaded_files = uploaded_files_by_guild[guild_id]
-
             choice = self.values[0]
             state.selected_tag = None if choice == "all" else choice
             state.current_page = 0
+            state.page_range_index = 0
 
             if state.selected_tag:
                 state.filtered_files = [f for f in uploaded_files if state.selected_tag in file_tags.get(f, [])]
@@ -613,9 +611,12 @@ async def listsongs(ctx):
 
     class PageSelector(Select):
         def __init__(self):
+            total_pages = max(1, math.ceil(len(state.filtered_files) / per_page))
+            start = state.page_range_index * range_size
+            end = min(start + range_size, total_pages)
             options = [
                 discord.SelectOption(label=f"Page {i + 1}", value=str(i))
-                for i in range((len(state.filtered_files) + per_page - 1) // per_page)
+                for i in range(start, end)
             ]
             super().__init__(placeholder="📖 Jump to page...", options=options, row=1)
 
@@ -639,14 +640,12 @@ async def listsongs(ctx):
         async def play_page(self, interaction: discord.Interaction, button: Button):
             start = state.current_page * per_page
             end = start + per_page
-            added = []
             for filename in state.filtered_files[start:end]:
                 song_path = os.path.join(MUSIC_FOLDER, filename)
                 song_queue_by_guild[guild_id].append(song_path)
-                added.append(filename)
 
             await interaction.response.send_message(
-                f"🎵 Queued {len(added)} songs from this page.", ephemeral=True
+                f"🌠 Queued {end - start} songs from this page.", ephemeral=True
             )
 
             if not ctx.voice_client or not ctx.voice_client.is_playing():
@@ -654,20 +653,20 @@ async def listsongs(ctx):
                     await ctx.author.voice.channel.connect()
                 await play_next(ctx)
 
-        @discord.ui.button(label="🔀 Shuffle This Page", style=discord.ButtonStyle.primary)
+        @discord.ui.button(label="🔀 Shuffle Page", style=discord.ButtonStyle.primary)
         async def shuffle_page(self, interaction: discord.Interaction, button: Button):
             start = state.current_page * per_page
             end = start + per_page
             page = state.filtered_files[start:end]
             random.shuffle(page)
-            added = []
             for filename in page:
                 song_path = os.path.join(MUSIC_FOLDER, filename)
                 song_queue_by_guild[guild_id].append(song_path)
-                added.append(filename)
 
             await interaction.response.send_message(
-                f"🔀 Shuffled {len(added)} songs from this page.", ephemeral=True
+                f"🎶 {len(page)} melodies stirred from the ether.\n"
+                f"🌌 EchoMond listens, and the cosmos hums in reply...",
+                ephemeral=True
             )
 
             if not ctx.voice_client or not ctx.voice_client.is_playing():
@@ -680,6 +679,38 @@ async def listsongs(ctx):
             total_pages = max(1, math.ceil(len(state.filtered_files) / per_page))
             if state.current_page < total_pages - 1:
                 state.current_page += 1
+                await interaction.response.edit_message(embed=get_page_embed(), view=self)
+
+        @discord.ui.button(label="🔁 Prev Range", style=discord.ButtonStyle.secondary, row=2)
+        async def prev_range(self, interaction: discord.Interaction, button: Button):
+            if state.page_range_index > 0:
+                state.page_range_index -= 1
+                self.clear_items()
+                self.add_item(TagSelector())
+                self.add_item(PageSelector())
+                self.add_item(self.prev_page)
+                self.add_item(self.play_page)
+                self.add_item(self.shuffle_page)
+                self.add_item(self.next_page)
+                self.add_item(self.prev_range)
+                self.add_item(self.next_range)
+                await interaction.response.edit_message(embed=get_page_embed(), view=self)
+
+        @discord.ui.button(label="🔁 Next Range", style=discord.ButtonStyle.secondary, row=2)
+        async def next_range(self, interaction: discord.Interaction, button: Button):
+            total_pages = max(1, math.ceil(len(state.filtered_files) / per_page))
+            max_index = (total_pages - 1) // range_size
+            if state.page_range_index < max_index:
+                state.page_range_index += 1
+                self.clear_items()
+                self.add_item(TagSelector())
+                self.add_item(PageSelector())
+                self.add_item(self.prev_page)
+                self.add_item(self.play_page)
+                self.add_item(self.shuffle_page)
+                self.add_item(self.next_page)
+                self.add_item(self.prev_range)
+                self.add_item(self.next_range)
                 await interaction.response.edit_message(embed=get_page_embed(), view=self)
 
     view = PaginationView()
@@ -887,7 +918,7 @@ async def listtags(ctx):
     embed = discord.Embed(
         title="🌼 Tags Blooming in the Archive",
         description=description,
-        color=discord.Color.from_str("#ffb6c1")
+        color=discord.Color(0xb9a1ff)
     )
     embed.set_footer(text="Tag your uploads to help them shine brighter ✨")
 
@@ -906,7 +937,7 @@ async def removetag(ctx, *args):
             description="Try one of these starlit options:\n\n"
                         "➔ !removetag <song number(s)> to clear **all tags** from songs\n"
                         "➔ !removetag <tag> to remove a tag from **all songs** that carry it",
-            color=discord.Color.from_str("#b9a1ff")
+            color=discord.Color(0xb9a1ff)
         )
         await ctx.send(embed=embed)
         return
@@ -936,14 +967,14 @@ async def removetag(ctx, *args):
             embed = discord.Embed(
                 title="🌌 Tags Cleansed",
                 description=f"The following songs are now tagless and free:\n{', '.join(cleared)}",
-                color=discord.Color.from_str("#b9a1ff")
+                color=discord.Color(0xb9a1ff)
             )
             embed.set_footer(text="✨ Float free, little tunes.")
         else:
             embed = discord.Embed(
                 title="🫧 Nothing to Clear",
                 description="None of the selected songs had any tags to begin with.",
-                color=discord.Color.from_str("#d3d3f3")
+                color=discord.Color(0xb9a1ff)
             )
 
         if invalid:
@@ -969,14 +1000,14 @@ async def removetag(ctx, *args):
             embed = discord.Embed(
                 title="🌠 Tag Lifted",
                 description=f"{tag_to_remove} has been gently unpinned from:\n{', '.join(removed_from)}",
-                color=discord.Color.from_str("#b9a1ff")
+                color=discord.Color(0xb9a1ff)
             )
             embed.set_footer(text="✨ They shimmer a little differently now.")
         else:
             embed = discord.Embed(
                 title="🌫 No Songs Matched",
                 description=f"No songs bore the tag {tag_to_remove}. EchoMond heard only silence.",
-                color=discord.Color.from_str("#d3d3f3")
+                color=discord.Color(0xb9a1ff)
             )
 
         await loading_message.edit(content=None, embed=embed)
