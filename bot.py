@@ -586,7 +586,7 @@ async def listsongs(ctx):
 
     class TagSelector(discord.ui.Select):
         def __init__(self):
-            all_tags = sorted(set(tag for tags in file_tags.values() for tag in tag))
+            all_tags = sorted(set(tag for tags in file_tags.values() for tag in tags))
             options = [discord.SelectOption(label="🌈 All Songs", value="all")] + [
                 discord.SelectOption(label=tag, value=tag) for tag in all_tags[:24]
             ]
