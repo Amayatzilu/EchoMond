@@ -23,7 +23,7 @@ intents.members = True  # Allow tracking for later interaction if needed
 MUSIC_FOLDER = "downloads/"
 os.makedirs(MUSIC_FOLDER, exist_ok=True)
 
-# ☁️ Initialize the bot
+#☁️ Initialize the bot
 bot = commands.Bot(command_prefix="!", intents=intents, help_command=None)  # help command disabled
 
 # 🌠 Voice connection logic
@@ -329,8 +329,12 @@ async def play_next(ctx):
     guild_id = ctx.guild.id
     vc = ctx.voice_client
 
-    if vc and vc.is_playing():
-        return
+    if not vc or not vc.is_connected():
+        connected = await connect_to_voice(ctx)
+        if not connected:
+            await ctx.send("⚠️ I could not connect to voice — the stars may be shifting.")
+            return
+        vc = ctx.voice_client  # refresh after connection
 
     if not song_queue_by_guild[guild_id]:
         await ctx.send("🌌 The queue is empty — the void hums in silence.")
