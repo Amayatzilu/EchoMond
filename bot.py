@@ -26,21 +26,6 @@ os.makedirs(MUSIC_FOLDER, exist_ok=True)
 #☁️ Initialize the bot
 bot = commands.Bot(command_prefix="!", intents=intents, help_command=None)  # help command disabled
 
-# 🌠 Voice connection logic
-async def connect_to_voice(ctx):
-    if not ctx.voice_client:
-        if ctx.author.voice:
-            try:
-                await ctx.author.voice.channel.connect(timeout=10)
-                return True
-            except asyncio.TimeoutError:
-                await ctx.send("⚠️ I reached out, but couldn’t connect in time... the stars must be shifting.")
-            except discord.ClientException:
-                await ctx.send("❌ Connection drift — I'm already tethered elsewhere.")
-        else:
-            await ctx.send("🌌 Join a voice channel first, and I’ll follow like moonlight on water.")
-    return False
-
 # 🌒 YouTube download config (rare use, but kept for edge cases)
 cookies_path = "/app/cookies.txt"
 cookie_data = os.getenv("YOUTUBE_COOKIES", "")
@@ -265,24 +250,39 @@ async def on_message(message):
 @bot.command(aliases=["playwithme", "connect", "verbinden", "kisses"])
 async def join(ctx):
     """EchoMond joins your voice channel with moonlit grace 🌙"""
-    if ctx.author.voice:
-        channel = ctx.author.voice.channel
-        try:
-            await channel.connect()
-            await ctx.send("🌌 EchoMond descends on a trail of stardust to join your melody.")
-        except discord.ClientException:
-            await ctx.send("⚠️ I'm already somewhere among the stars. Call me again soon.")
-    else:
-        await ctx.send("❌ I can’t find your signal among the constellations — please join a voice channel.")
+    if not ctx.author.voice:
+        await ctx.send("❌ I can’t hear your echo — join a voice channel first, and I’ll follow like moonlight.")
+        return
+
+    channel = ctx.author.voice.channel
+
+    if ctx.voice_client:
+        if ctx.voice_client.channel == channel and ctx.voice_client.is_connected():
+            await ctx.send("🌌 I’m already resonating in your sky. No need to summon me twice.")
+            return
+        else:
+            try:
+                await ctx.voice_client.disconnect(force=True)
+                await ctx.send("🔄 I’ve realigned my orbit — shifting to your constellation...")
+            except Exception as e:
+                await ctx.send(f"⚠️ I tried to break free, but something pulled me back: `{e}`")
+
+    try:
+        await channel.connect(timeout=10)
+        await ctx.send("🌠 EchoMond descends on a trail of stardust to join your melody.")
+    except asyncio.TimeoutError:
+        await ctx.send("⏳ I reached, but couldn’t connect in time — the stars were unkind.")
+    except discord.ClientException as e:
+        await ctx.send(f"⚠️ Discord resisted the pull: `{e}`")
 
 @bot.command(aliases=["goaway", "disconnect", "verlassen", "hugs"])
 async def leave(ctx):
     """EchoMond floats away from the voice channel 🌒"""
-    if ctx.voice_client:
+    if ctx.voice_client and ctx.voice_client.is_connected():
         await ctx.voice_client.disconnect()
-        await ctx.send("🌠 EchoMond slips silently from the current, returning to the space between songs.")
+        await ctx.send("🌠 EchoMond slips quietly from the soundstream, returning to the space between songs.")
     else:
-        await ctx.send("💤 I’m not currently resonating anywhere. Call and I shall come.")
+        await ctx.send("💤 I drift in silence already — call me again when music stirs.")
 
 @bot.command(aliases=["p", "gimme", "spielen"])
 async def play(ctx, url: str = None):
@@ -293,11 +293,11 @@ async def play(ctx, url: str = None):
         await ctx.send("🌑 A song link would help me find your rhythm in the void.")
         return
 
-    connected = await connect_to_voice(ctx)
-    if not connected:
+    if not ctx.voice_client or not ctx.voice_client.is_connected():
+        await ctx.send("🔇 EchoMond floats beyond the sound... use `!join` to summon him first.")
         return
-    else:
-        await ctx.send("🔭 EchoMond tunes into your frequency...")
+
+    await ctx.send("🔭 EchoMond tunes into your frequency...")
 
     try:
         with youtube_dl.YoutubeDL(YDL_OPTIONS) as ydl:
@@ -307,10 +307,11 @@ async def play(ctx, url: str = None):
                 added = 0
                 for entry in info['entries']:
                     if entry:
-                        if '_type' in entry and entry['_type'] == 'url':
-                            entry_info = ydl.extract_info(entry['url'], download=False)
-                        else:
-                            entry_info = entry
+                        entry_info = (
+                            ydl.extract_info(entry['url'], download=False)
+                            if entry.get('_type') == 'url'
+                            else entry
+                        )
                         song_queue_by_guild[guild_id].append((entry_info['webpage_url'], entry_info['title']))
                         added += 1
                 await ctx.send(f"🌌 {added} celestial echoes added to the queue.")
@@ -330,11 +331,8 @@ async def play_next(ctx):
     vc = ctx.voice_client
 
     if not vc or not vc.is_connected():
-        connected = await connect_to_voice(ctx)
-        if not connected:
-            await ctx.send("⚠️ I could not connect to voice — the stars may be shifting.")
-            return
-        vc = ctx.voice_client  # refresh after connection
+        await ctx.send("🔇 I’m untethered from sound — use `!join` to bring me into your sky.")
+        return
 
     if not song_queue_by_guild[guild_id]:
         await ctx.send("🌌 The queue is empty — the void hums in silence.")
@@ -343,6 +341,7 @@ async def play_next(ctx):
     usage_counters[guild_id] += 1
     is_high_usage = usage_counters[guild_id] >= 30
 
+    # Clear previous now playing
     if last_now_playing_message_by_guild.get(guild_id):
         try:
             embed = last_now_playing_message_by_guild[guild_id].embeds[0]
@@ -407,6 +406,7 @@ async def play_next(ctx):
     message = await ctx.send(embed=embed)
     last_now_playing_message_by_guild[guild_id] = message
 
+    # Periodic update (unless high-usage)
     if duration and not is_high_usage:
         for second in range(1, duration + 1):
             if second % 10 == 0 or second == duration:
@@ -419,10 +419,11 @@ async def play_next(ctx):
                     pass
             await asyncio.sleep(1)
 
+        # Final phase shift
         try:
             embed.title = "🌌 Fadeout"
             embed.description = f"**{song_title}** drifts into cosmic silence."
-            embed.set_field_at(0, name="Progress", value=f"🌕🌕🌕🌕🌕🌕🌕🌕🌕🌕 `Finished`", inline=False)
+            embed.set_field_at(0, name="Progress", value="🌕🌕🌕🌕🌕🌕🌕🌕🌕🌕 `Finished`", inline=False)
             await message.edit(embed=embed)
         except discord.HTTPException:
             pass
@@ -622,13 +623,20 @@ async def listsongs(ctx):
             for filename in state.filtered_files[start:end]:
                 song_path = os.path.join(MUSIC_FOLDER, filename)
                 song_queue_by_guild[guild_id].append(song_path)
+
             await interaction.response.send_message(
                 f"🎶 {end - start} melodies stirred from the ether.\n🌌 EchoMond listens, and the cosmos hums in reply...",
                 ephemeral=True
             )
-            if not ctx.voice_client or not ctx.voice_client.is_playing():
-                if not ctx.voice_client and ctx.author.voice:
-                    await ctx.author.voice.channel.connect()
+
+            if not ctx.voice_client or not ctx.voice_client.is_connected():
+                await interaction.followup.send(
+                    "🔇 EchoMond is adrift... use `!join` to draw him into your sky.",
+                    ephemeral=True
+                )
+                return
+
+            if not ctx.voice_client.is_playing():
                 await play_next(ctx)
 
         @discord.ui.button(label="🔀 Shuffle Page", style=discord.ButtonStyle.primary, row=1)
@@ -637,16 +645,24 @@ async def listsongs(ctx):
             end = start + per_page
             page = state.filtered_files[start:end]
             random.shuffle(page)
+
             for filename in page:
                 song_path = os.path.join(MUSIC_FOLDER, filename)
                 song_queue_by_guild[guild_id].append(song_path)
+
             await interaction.response.send_message(
                 f"🔀 {len(page)} tracks shuffled and queued beneath the stars.",
                 ephemeral=True
             )
-            if not ctx.voice_client or not ctx.voice_client.is_playing():
-                if not ctx.voice_client and ctx.author.voice:
-                    await ctx.author.voice.channel.connect()
+
+            if not ctx.voice_client or not ctx.voice_client.is_connected():
+                await interaction.followup.send(
+                    "🔇 EchoMond awaits connection. Use `!join` to begin playback.",
+                    ephemeral=True
+                )
+                return
+
+            if not ctx.voice_client.is_playing():
                 await play_next(ctx)
 
         @discord.ui.button(label="⏭️ Next", style=discord.ButtonStyle.blurple, row=1)
@@ -703,9 +719,12 @@ async def playalluploads(ctx):
 
     await ctx.send(f"🌌 {len(shuffled_songs)} songs shimmered into your queue from the void.")
 
-    if await connect_to_voice(ctx):
-        if not ctx.voice_client.is_playing():
-            await play_next(ctx)
+    if not ctx.voice_client or not ctx.voice_client.is_connected():
+        await ctx.send("🔇 EchoMond is waiting beyond the stars... use `!join` to bring him into the flow.")
+        return
+
+    if not ctx.voice_client.is_playing():
+        await play_next(ctx)
 
 @bot.command(aliases=["pp", "seite", "page", "playpage"])
 async def playbypage(ctx, *pages):
@@ -746,9 +765,12 @@ async def playbypage(ctx, *pages):
 
     await ctx.send(f"🌠 Queued {len(added)} cosmic tunes.")
 
-    if await connect_to_voice(ctx):
-        if not ctx.voice_client.is_playing():
-            await play_next(ctx)
+    if not ctx.voice_client or not ctx.voice_client.is_connected():
+        await ctx.send("🔇 EchoMond awaits your call — use `!join` to guide him into the soundstream.")
+        return
+
+    if not ctx.voice_client.is_playing():
+        await play_next(ctx)
 
 @bot.command(aliases=["number", "playnumber", "n"])
 async def playbynumber(ctx, *numbers):
@@ -780,9 +802,12 @@ async def playbynumber(ctx, *numbers):
 
     await ctx.send(f"🌌 Queued {len(added_songs)} cosmic notes.")
 
-    if await connect_to_voice(ctx):
-        if not ctx.voice_client.is_playing():
-            await play_next(ctx)
+    if not ctx.voice_client or not ctx.voice_client.is_connected():
+        await ctx.send("🔇 EchoMond awaits your call — use `!join` to guide him into harmony.")
+        return
+
+    if not ctx.voice_client.is_playing():
+        await play_next(ctx)
 
 @bot.command(aliases=["flag", "etikett"])
 async def tag(ctx, *args):
@@ -855,8 +880,11 @@ async def playbytag(ctx, *search_tags):
 
     await ctx.send(f"🌌 Added **{len(matched)}** songs shimmering with `{', '.join(tags_lower)}`.")
 
-    connected = await connect_to_voice(ctx)
-    if connected and not ctx.voice_client.is_playing():
+    if not ctx.voice_client or not ctx.voice_client.is_connected():
+        await ctx.send("🔇 EchoMond awaits connection — use `!join` to guide him into the stream.")
+        return
+
+    if not ctx.voice_client.is_playing():
         await play_next(ctx)
 
 @bot.command(aliases=["whiteflag", "viewtags", "showtags"])
