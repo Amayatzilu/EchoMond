@@ -75,7 +75,6 @@ async def help(ctx):
                 embed.description = (
                     "📁 **!listsongs** – Explore what you've offered to the void\n"
                     "🔢 **!playbynumber** – Play by cosmic order. Alias: n\n"
-                    "📄 **!playbypage** – Choose from stanzas of your archive. Alias: pp\n"
                     "🌠 **!playalluploads** – Let it all shimmer\n"
                     "❌ **!deleteupload** – Retire a track from orbit. Alias: du\n"
                     "🧹 **!clearuploads** – Empty your sky of echoes. Alias: cu"
@@ -250,22 +249,25 @@ async def on_message(message):
 @bot.command(aliases=["playwithme", "connect", "verbinden", "kisses"])
 async def join(ctx):
     """EchoMond joins your voice channel with moonlit grace 🌙"""
-    if not ctx.author.voice:
+    author_voice = ctx.author.voice
+
+    if not author_voice or not author_voice.channel:
         await ctx.send("❌ I can’t hear your echo — join a voice channel first, and I’ll follow like moonlight.")
         return
 
-    channel = ctx.author.voice.channel
+    channel = author_voice.channel
+    vc = ctx.guild.voice_client
 
-    if ctx.voice_client:
-        if ctx.voice_client.channel == channel and ctx.voice_client.is_connected():
-            await ctx.send("🌌 I’m already resonating in your sky. No need to summon me twice.")
-            return
-        else:
-            try:
-                await ctx.voice_client.disconnect(force=True)
-                await ctx.send("🔄 I’ve realigned my orbit — shifting to your constellation...")
-            except Exception as e:
-                await ctx.send(f"⚠️ I tried to break free, but something pulled me back: `{e}`")
+    if vc and vc.channel == channel and vc.is_connected():
+        await ctx.send("🌌 I’m already resonating in your sky. No need to summon me twice.")
+        return
+
+    if vc and vc.is_connected():
+        try:
+            await vc.disconnect(force=True)
+            await ctx.send("🔄 I’ve realigned my orbit — shifting to your constellation...")
+        except Exception as e:
+            await ctx.send(f"⚠️ I tried to break free, but something pulled me back: `{e}`")
 
     try:
         await channel.connect(timeout=10)
@@ -278,8 +280,10 @@ async def join(ctx):
 @bot.command(aliases=["goaway", "disconnect", "verlassen", "hugs"])
 async def leave(ctx):
     """EchoMond floats away from the voice channel 🌒"""
-    if ctx.voice_client and ctx.voice_client.is_connected():
-        await ctx.voice_client.disconnect()
+    vc = ctx.guild.voice_client
+
+    if vc and vc.is_connected():
+        await vc.disconnect()
         await ctx.send("🌠 EchoMond slips quietly from the soundstream, returning to the space between songs.")
     else:
         await ctx.send("💤 I drift in silence already — call me again when music stirs.")
@@ -288,12 +292,13 @@ async def leave(ctx):
 async def play(ctx, url: str = None):
     """Streams a song from the stars (YouTube) or adds it to the moonlit queue."""
     guild_id = ctx.guild.id
+    vc = ctx.guild.voice_client
 
     if not url:
         await ctx.send("🌑 A song link would help me find your rhythm in the void.")
         return
 
-    if not ctx.voice_client or not ctx.voice_client.is_connected():
+    if not vc or not vc.is_connected():
         await ctx.send("🔇 EchoMond floats beyond the sound... use `!join` to summon him first.")
         return
 
@@ -323,7 +328,7 @@ async def play(ctx, url: str = None):
         await ctx.send(f"⚠️ The constellations whispered of an error: `{e}`")
         return
 
-    if not ctx.voice_client.is_playing():
+    if not vc.is_playing():
         await play_next(ctx)
 
 async def play_next(ctx):
@@ -457,29 +462,93 @@ async def shuffle(ctx):
 @bot.command(aliases=["hush"])
 async def pause(ctx):
     """Pauses the current song with cosmic stillness."""
-    if ctx.voice_client and ctx.voice_client.is_playing():
-        ctx.voice_client.pause()
+    vc = ctx.voice_client or ctx.guild.voice_client
+    if not vc or not vc.is_connected():
+        await ctx.send("🔇 I’m not resonating with your skies right now. Use `!join` to summon me first.")
+        return
+    if vc.is_playing():
+        vc.pause()
         await ctx.send("🌑 The music slips into a lunar hush.")
+    else:
+        await ctx.send("🤫 There's no melody to silence — the void sings on its own.")
 
 @bot.command(aliases=["youmayspeak"])
 async def resume(ctx):
     """Resumes paused music with celestial flow."""
-    if ctx.voice_client and ctx.voice_client.is_paused():
-        ctx.voice_client.resume()
+    vc = ctx.voice_client or ctx.guild.voice_client
+    if not vc or not vc.is_connected():
+        await ctx.send("🔇 I float in silence, untethered. Use `!join` to awaken the melody.")
+        return
+    if vc.is_paused():
+        vc.resume()
         await ctx.send("🌔 The pulse returns — starlight rising in rhythm once more.")
+    else:
+        await ctx.send("🎵 I’m already playing the music of the spheres — no need to resume.")
+
+@bot.command(aliases=["again", "rewind", "moonspin", "encore"])
+async def replay(ctx):
+    """Replays the last song played — a loop of lunar longing."""
+    guild_id = ctx.guild.id
+    vc = ctx.voice_client or ctx.guild.voice_client
+
+    if not vc or not vc.is_connected():
+        await ctx.send("🔇 I drift untethered — call `!join` to bring me close again.")
+        return
+
+    last_message = last_now_playing_message_by_guild.get(guild_id)
+    if not last_message:
+        await ctx.send("🌑 I can’t echo what hasn’t been sung. No track to replay.")
+        return
+
+    try:
+        title_line = last_message.embeds[0].description
+        # Extract the song title from: 🎶 **{song_title}** emerges beneath starlit skies.
+        if title_line and "🎶 **" in title_line:
+            song_title = title_line.split("🎶 **")[1].split("**")[0]
+        else:
+            song_title = None
+    except Exception:
+        song_title = None
+
+    if not song_title:
+        await ctx.send("🌀 The stars blur — I can’t trace the last song’s name.")
+        return
+
+    # Search for it in uploaded files (by filename match)
+    uploaded_files = uploaded_files_by_guild.get(guild_id, [])
+    match = next((f for f in uploaded_files if song_title in f), None)
+
+    if not match:
+        await ctx.send("💫 That melody has drifted out of the archive... I can't find it.")
+        return
+
+    song_path = os.path.join(MUSIC_FOLDER, match)
+    song_queue_by_guild[guild_id].insert(0, song_path)
+    await ctx.send(f"🔄 **{song_title}** spins once more through the cosmos...")
+
+    if not vc.is_playing():
+        await play_next(ctx)
 
 @bot.command(aliases=["nextplease", "next", "skippy"])
 async def skip(ctx):
     """Skips the current song with a stardust swirl."""
     if ctx.voice_client and ctx.voice_client.is_playing():
         ctx.voice_client.stop()
-        await play_next(ctx)
         await ctx.send("🌠 A star blinks out — skipping to the next celestial note.")
+    else:
+        await ctx.send("🌑 There's no melody to skip... silence echoes.")
+    await play_next(ctx)
 
 @bot.command(aliases=["turnitup", "tooloud", "v"])
-async def volume(ctx, volume: int):
+async def volume(ctx, volume: int = None):
     """Adjusts the volume with lunar resonance."""
     guild_id = ctx.guild.id
+
+    if volume is None:
+        # Report current volume if not provided
+        current = int((volume_levels_by_guild.get(guild_id, 0.5)) * 100)
+        await ctx.send(f"🔊 Echo’s current resonance rings at **{current}%**.")
+        return
 
     if 1 <= volume <= 100:
         volume_levels_by_guild[guild_id] = volume / 100.0
@@ -489,7 +558,7 @@ async def volume(ctx, volume: int):
 
         await ctx.send(f"🌌 Echo resonates now at **{volume}%** clarity.")
     else:
-        await ctx.send("🌒 Volume must fall between 1 and 100 moons.")
+        await ctx.send("🌒 Volume must fall between **1** and **100** moons.")
 
 @bot.command(aliases=["whatsnext", "q"])
 async def queue(ctx):
@@ -567,12 +636,10 @@ async def listsongs(ctx):
         return
 
     per_page = 10
-    range_size = 25
 
     class State:
         def __init__(self):
             self.current_page = 0
-            self.page_range_index = 0
             self.filtered_files = uploaded_files[:]
             self.selected_tag = None
 
@@ -582,7 +649,11 @@ async def listsongs(ctx):
         start = state.current_page * per_page
         end = start + per_page
         page = state.filtered_files[start:end]
-        song_list = "\n".join(f"{start + i + 1}. {song}" for i, song in enumerate(page)) or "☁️ No songs found on this page."
+        song_list = "\n".join(
+            f"{start + i + 1}. {song or '[Unknown]'}"
+            for i, song in enumerate(page)
+        ) or "☁️ No songs found on this page."
+
         total_pages = max(1, math.ceil(len(state.filtered_files) / per_page))
         tag_title = f" – Tag: {state.selected_tag}" if state.selected_tag else ""
         embed = discord.Embed(
@@ -595,24 +666,35 @@ async def listsongs(ctx):
 
     class TagSelector(discord.ui.Select):
         def __init__(self):
-            all_tags = sorted(set(tag for tags in file_tags.values() for tag in tags))
-            options = [discord.SelectOption(label="🌈 All Songs", value="all")] + [
+            all_tags = sorted(set(
+                tag for tags in file_tags.values() if tags
+                for tag in tags
+            ))
+            options = [discord.SelectOption(label="All Songs", value="all")] + [
                 discord.SelectOption(label=tag, value=tag) for tag in all_tags[:24]
             ]
-            super().__init__(placeholder="🎨 Filter by tag...", options=options, row=0)
+            super().__init__(placeholder="Filter by tag...", options=options, row=0)
 
         async def callback(self, interaction: discord.Interaction):
             choice = self.values[0]
             state.selected_tag = None if choice == "all" else choice
             state.current_page = 0
-            state.page_range_index = 0
-            state.filtered_files = [f for f in uploaded_files if state.selected_tag in file_tags.get(f, [])] if state.selected_tag else uploaded_files[:]
+            state.filtered_files = [
+                f for f in uploaded_files if state.selected_tag in (file_tags.get(f) or [])
+            ] if state.selected_tag else uploaded_files[:]
             await interaction.response.edit_message(embed=get_page_embed(), view=view)
 
     class PaginationView(discord.ui.View):
         def __init__(self):
             super().__init__(timeout=60)
             self.add_item(TagSelector())
+            self.message = None
+
+        async def on_timeout(self):
+            for item in self.children:
+                item.disabled = True
+            if self.message:
+                await self.message.edit(view=self)
 
         @discord.ui.button(label="⏮️ Prev", style=discord.ButtonStyle.blurple, row=1)
         async def prev_page(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -685,23 +767,25 @@ async def listsongs(ctx):
                     required=True,
                     max_length=4
                 )
+
                 async def on_submit(modal_self, modal_interaction: discord.Interaction):
                     try:
                         total_pages = max(1, math.ceil(len(state.filtered_files) / per_page))
                         page_num = int(str(modal_self.page).strip())
                         if 1 <= page_num <= total_pages:
                             state.current_page = page_num - 1
-                            await modal_interaction.response.edit_message(embed=get_page_embed(), view=self)
+                            await modal_interaction.response.edit_message(embed=get_page_embed(), view=view)
                         else:
                             await modal_interaction.response.send_message(
                                 f"⚠️ Page {page_num} isn’t in the starscape (1–{total_pages}).", ephemeral=True
                             )
                     except ValueError:
                         await modal_interaction.response.send_message("🚫 Invalid input — please enter a number.", ephemeral=True)
+
             await interaction.response.send_modal(PageJumpModal())
 
     view = PaginationView()
-    await ctx.send(embed=get_page_embed(), view=view)
+    view.message = await ctx.send(embed=get_page_embed(), view=view)
 
 @bot.command(aliases=["everything", "alle", "expulso", "mruniverse"])
 async def playalluploads(ctx):
@@ -714,14 +798,20 @@ async def playalluploads(ctx):
         await ctx.send("🌘 No celestial notes found — upload a tune to begin.")
         return
 
-    shuffled_songs = uploaded_files[:]
-    random.shuffle(shuffled_songs)
+    # Filter out any None or blank filenames
+    valid_files = [f for f in uploaded_files if f and isinstance(f, str)]
 
-    for filename in shuffled_songs:
+    if not valid_files:
+        await ctx.send("🪐 I tried, but found only echoes of silence. No usable uploads.")
+        return
+
+    random.shuffle(valid_files)
+
+    for filename in valid_files:
         song_path = os.path.join(MUSIC_FOLDER, filename)
         song_queue.append(song_path)
 
-    await ctx.send(f"🌌 {len(shuffled_songs)} songs shimmered into your queue from the void.")
+    await ctx.send(f"🌌 {len(valid_files)} songs shimmered into your queue from the void.")
 
     if not ctx.voice_client or not ctx.voice_client.is_connected():
         await ctx.send("🔇 EchoMond is waiting beyond the stars... use `!join` to bring him into the flow.")
@@ -730,53 +820,7 @@ async def playalluploads(ctx):
     if not ctx.voice_client.is_playing():
         await play_next(ctx)
 
-@bot.command(aliases=["pp", "seite", "page", "playpage"])
-async def playbypage(ctx, *pages):
-    """Plays one or more pages of uploaded songs."""
-    guild_id = ctx.guild.id
-    uploaded_files = uploaded_files_by_guild.get(guild_id, [])
-
-    if not uploaded_files:
-        await ctx.send("🌘 No starlit uploads found yet.")
-        return
-
-    per_page = 10
-    total_pages = (len(uploaded_files) + per_page - 1) // per_page
-    added = []
-
-    if not pages:
-        await ctx.send("🌑 Please share one or more page numbers (e.g. `!page 1 2 3`).")
-        return
-
-    for page_str in pages:
-        try:
-            page = int(page_str)
-            if not (1 <= page <= total_pages):
-                await ctx.send(f"⚠️ Page `{page}` drifts beyond the galaxy... skipping.")
-                continue
-
-            start, end = (page - 1) * per_page, page * per_page
-            for filename in uploaded_files[start:end]:
-                song_path = os.path.join(MUSIC_FOLDER, filename)
-                song_queue_by_guild[guild_id].append(song_path)
-                added.append(filename)
-        except ValueError:
-            await ctx.send(f"🌘 `{page_str}` is no valid star coordinate. Floating past.")
-
-    if not added:
-        await ctx.send("🌑 No constellations aligned. Try again with valid pages.")
-        return
-
-    await ctx.send(f"🌠 Queued {len(added)} cosmic tunes.")
-
-    if not ctx.voice_client or not ctx.voice_client.is_connected():
-        await ctx.send("🔇 EchoMond awaits your call — use `!join` to guide him into the soundstream.")
-        return
-
-    if not ctx.voice_client.is_playing():
-        await play_next(ctx)
-
-@bot.command(aliases=["number", "playnumber", "n"])
+@bot.command(aliases=["number", "playnumber", "n", "galaxynote"])
 async def playbynumber(ctx, *numbers):
     """Plays one or more uploaded songs using their numerical index."""
     guild_id = ctx.guild.id
@@ -792,9 +836,10 @@ async def playbynumber(ctx, *numbers):
         try:
             index = int(num.strip(","))
             if 1 <= index <= len(uploaded_files):
-                song_path = os.path.join(MUSIC_FOLDER, uploaded_files[index - 1])
+                filename = uploaded_files[index - 1]
+                song_path = os.path.join(MUSIC_FOLDER, filename)
                 song_queue.append(song_path)
-                added_songs.append(uploaded_files[index - 1])
+                added_songs.append(filename)
             else:
                 await ctx.send(f"☄️ `{index}` drifts beyond your orbit. Use `!listsongs` to align.")
         except ValueError:
@@ -821,18 +866,20 @@ async def tag(ctx, *args):
     file_tags = file_tags_by_guild.setdefault(guild_id, {})
 
     if len(args) < 2:
-        await ctx.send("🏷️ Use `!tag <numbers> <tags>` — e.g., `!tag 1 2 chill ambient` to label your sonic stars.")
+        await ctx.send("🏷️ Usage: `!tag <numbers> <tags>` — e.g., `!tag 1 3 chill ambient` to mark your sonic stars.")
         return
 
-    try:
-        numbers = [int(arg) for arg in args if arg.isdigit()]
-        tags = [arg.lower() for arg in args if not arg.isdigit()]
-    except ValueError:
-        await ctx.send("🌑 Some inputs slipped out of orbit. Use clear numbers and tags.")
-        return
+    numbers = []
+    tags = []
+
+    for arg in args:
+        if arg.isdigit():
+            numbers.append(int(arg))
+        else:
+            tags.append(arg.lower())
 
     if not numbers or not tags:
-        await ctx.send("☄️ Please share both star numbers and celestial tags.")
+        await ctx.send("☄️ Please provide at least one valid number and one tag.")
         return
 
     tagged = []
@@ -845,13 +892,13 @@ async def tag(ctx, *args):
                     file_tags[filename].append(tag)
             tagged.append(filename)
         else:
-            await ctx.send(f"🌘 Song number {num} couldn’t be found in the sky...")
+            await ctx.send(f"🌘 Song number `{num}` drifts beyond this playlist... skipping.")
 
     if tagged:
-        await ctx.send(f"🌠 Labeled: **{', '.join(tagged)}** with `{', '.join(tags)}`")
+        await ctx.send(f"🌠 Tagged: **{', '.join(tagged)}** with `{', '.join(tags)}`")
         save_upload_data()
     else:
-        await ctx.send("🌫️ No songs found — starlight missed the mark.")
+        await ctx.send("🌫️ No songs were tagged — check your numbers and try again.")
 
 @bot.command(aliases=["tagplay", "greenflag", "pt"])
 async def playbytag(ctx, *search_tags):
@@ -868,10 +915,11 @@ async def playbytag(ctx, *search_tags):
         await ctx.send("🌠 Whisper one or more tags. Example: `!playbytag ambient drift`")
         return
 
-    tags_lower = [t.lower() for t in search_tags]
+    tags_lower = {tag.lower() for tag in search_tags}
+
     matched = [
         filename for filename in uploaded_files
-        if any(tag in file_tags.get(filename, []) for tag in tags_lower)
+        if file_tags.get(filename) and any(tag in file_tags[filename] for tag in tags_lower)
     ]
 
     if not matched:
@@ -897,7 +945,7 @@ async def listtags(ctx):
     guild_id = ctx.guild.id
     file_tags = file_tags_by_guild.setdefault(guild_id, {})
 
-    unique_tags = set(tag for tags in file_tags.values() for tag in tags)
+    unique_tags = {tag for tags in file_tags.values() for tag in tags}
 
     if not unique_tags:
         await ctx.send("🌫️ No tags exist yet — nothing is dancing in the air.")
@@ -907,9 +955,8 @@ async def listtags(ctx):
     tag_text = ", ".join(sorted_tags)
 
     if len(tag_text) > 4000:
-        trimmed = tag_text[:4000]
-        last_comma = trimmed.rfind(",")
-        trimmed = trimmed[:last_comma] + "..."
+        last_comma = tag_text.rfind(",", 0, 4000)
+        trimmed = tag_text[:last_comma] + "..."
         description = f"`{trimmed}`\n\n⚠️ Some tags are hidden due to space. Use filters to browse!"
     else:
         description = f"`{tag_text}`"
@@ -917,7 +964,7 @@ async def listtags(ctx):
     embed = discord.Embed(
         title="🌼 Tags Blooming in the Archive",
         description=description,
-        color=discord.Color(0xb9a1ff)
+        color=0xb9a1ff
     )
     embed.set_footer(text="Tag your uploads to help them shine brighter ✨")
 
@@ -933,9 +980,11 @@ async def removetag(ctx, *args):
     if not args:
         embed = discord.Embed(
             title="🌙 Echo drifts in, but you forgot something...",
-            description="Try one of these starlit options:\n\n"
-                        "➔ !removetag <song number(s)> to clear **all tags** from songs\n"
-                        "➔ !removetag <tag> to remove a tag from **all songs** that carry it",
+            description=(
+                "Try one of these starlit options:\n\n"
+                "➔ `!removetag <song number(s)>` to clear **all tags** from songs\n"
+                "➔ `!removetag <tag>` to remove a tag from **all songs** that carry it"
+            ),
             color=discord.Color(0xb9a1ff)
         )
         await ctx.send(embed=embed)
@@ -963,9 +1012,10 @@ async def removetag(ctx, *args):
                     did_change = True
 
         if cleared:
+            shown = ", ".join(cleared[:10]) + (", ..." if len(cleared) > 10 else "")
             embed = discord.Embed(
                 title="🌌 Tags Cleansed",
-                description=f"The following songs are now tagless and free:\n{', '.join(cleared)}",
+                description=f"Removed all tags from {len(cleared)} song(s):\n{shown}",
                 color=discord.Color(0xb9a1ff)
             )
             embed.set_footer(text="✨ Float free, little tunes.")
@@ -990,22 +1040,25 @@ async def removetag(ctx, *args):
         removed_from = []
 
         for filename, tags in file_tags.items():
-            if tag_to_remove in tags:
-                tags.remove(tag_to_remove)
+            tags_lowered = [t.lower() for t in tags]
+            if tag_to_remove in tags_lowered:
+                index = tags_lowered.index(tag_to_remove)
+                tags.pop(index)
                 removed_from.append(filename)
                 did_change = True
 
         if removed_from:
+            shown = ", ".join(removed_from[:10]) + (", ..." if len(removed_from) > 10 else "")
             embed = discord.Embed(
                 title="🌠 Tag Lifted",
-                description=f"{tag_to_remove} has been gently unpinned from:\n{', '.join(removed_from)}",
+                description=f"`{tag_to_remove}` unpinned from {len(removed_from)} song(s):\n{shown}",
                 color=discord.Color(0xb9a1ff)
             )
             embed.set_footer(text="✨ They shimmer a little differently now.")
         else:
             embed = discord.Embed(
                 title="🌫 No Songs Matched",
-                description=f"No songs bore the tag {tag_to_remove}. EchoMond heard only silence.",
+                description=f"No songs carried the tag `{tag_to_remove}`. EchoMond heard only silence.",
                 color=discord.Color(0xb9a1ff)
             )
 
@@ -1018,8 +1071,16 @@ async def removetag(ctx, *args):
 async def stop(ctx):
     """Stops playback and clears the queue."""
     guild_id = ctx.guild.id
-    song_queue_by_guild[guild_id] = []
 
+    # Clear the queue first
+    queue = song_queue_by_guild.get(guild_id, [])
+    queue.clear()
+
+    # Reset usage tracking or "now playing" state if you track those too
+    last_now_playing_message_by_guild[guild_id] = None
+    usage_counters[guild_id] = 0
+
+    # Stop the current song if playing
     if ctx.voice_client and ctx.voice_client.is_playing():
         ctx.voice_client.stop()
         await ctx.send("🌑 Playback stilled — the stars fall quiet.")
@@ -1032,6 +1093,7 @@ async def deleteupload(ctx, *numbers):
     guild_id = ctx.guild.id
     uploaded_files = uploaded_files_by_guild.get(guild_id, [])
     file_tags = file_tags_by_guild.get(guild_id, {})
+    song_queue = song_queue_by_guild.get(guild_id, [])
 
     if not numbers:
         await ctx.send("🌙 Whisper a number or two — I need to know which songs to let go.")
@@ -1047,11 +1109,15 @@ async def deleteupload(ctx, *numbers):
                 filename = uploaded_files[num - 1]
                 file_path = os.path.join(MUSIC_FOLDER, filename)
 
+                # Delete the file if it exists
                 if os.path.exists(file_path):
                     try:
                         os.remove(file_path)
                     except Exception as e:
                         print(f"[Warning] Could not delete {filename}: {e}")
+
+                # Remove from queue if present
+                song_queue[:] = [s for s in song_queue if not s.endswith(filename)]
 
                 deleted.append(filename)
             else:
@@ -1059,14 +1125,16 @@ async def deleteupload(ctx, *numbers):
         except ValueError:
             invalid.append(num_str)
 
+    # Remove metadata
     for filename in deleted:
         if filename in uploaded_files:
             uploaded_files.remove(filename)
-        if filename in file_tags:
-            del file_tags[filename]
+        file_tags.pop(filename, None)
 
+    # Save state
     uploaded_files_by_guild[guild_id] = uploaded_files
     file_tags_by_guild[guild_id] = file_tags
+    song_queue_by_guild[guild_id] = song_queue
     save_upload_data()
 
     if deleted:
@@ -1102,7 +1170,7 @@ async def clearuploads(ctx):
 
         @discord.ui.button(label="✅ Yes, release them", style=discord.ButtonStyle.danger)
         async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
-            if interaction.user != ctx.author:
+            if interaction.user.id != ctx.author.id:
                 await interaction.response.send_message(
                     "❌ Only the one who beckoned the moon may clear the sky.",
                     ephemeral=True
@@ -1112,7 +1180,7 @@ async def clearuploads(ctx):
             file_count = 0
             for filename in uploaded_files_by_guild[guild_id]:
                 file_path = os.path.join(MUSIC_FOLDER, filename)
-                if os.path.exists(file_path) and filename.endswith(('.mp3', '.wav')):
+                if os.path.exists(file_path) and filename.lower().endswith(('.mp3', '.wav')):
                     try:
                         os.remove(file_path)
                         file_count += 1
@@ -1124,13 +1192,13 @@ async def clearuploads(ctx):
             save_upload_data()
 
             await interaction.response.edit_message(
-                content=f"💫 Released {file_count} files. The echoes are now adrift.",
+                content=f"💫 Released {file_count} file{'s' if file_count != 1 else ''}. The echoes are now adrift.",
                 view=None
             )
 
         @discord.ui.button(label="❌ Cancel", style=discord.ButtonStyle.secondary)
         async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
-            if interaction.user == ctx.author:
+            if interaction.user.id == ctx.author.id:
                 await interaction.response.edit_message(
                     content="🌒 Cancelled — nothing was disturbed.",
                     view=None
@@ -1145,7 +1213,6 @@ async def clearuploads(ctx):
         "⚠️ Are you sure you wish to clear all uploaded songs? This starlit purge cannot be undone.",
         view=ConfirmClearView()
     )
-
 
 # Run the bot
 TOKEN = os.getenv("TOKEN")  # Reads token from environment variables
