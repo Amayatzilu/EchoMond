@@ -265,38 +265,45 @@ import asyncio  # Make sure this is at the top of your file
 @bot.command(aliases=["playwithme", "connect", "verbinden", "kisses"])
 async def join(ctx):
     """EchoMond joins your voice channel with moonlit grace 🌙"""
-    author_voice = ctx.author.voice
 
-    if not author_voice or not author_voice.channel:
+    # Step 1: Make sure the user is in a voice channel
+    user_voice = ctx.author.voice
+    if not user_voice or not user_voice.channel:
         await ctx.send("❌ I can’t hear your echo — join a voice channel first, and I’ll follow like moonlight.")
         return
 
-    channel = author_voice.channel
+    # Step 2: Grab the voice channel and check bot status
+    channel = user_voice.channel
     vc = ctx.guild.voice_client
 
-    # Already connected to the same channel
-    if vc and vc.is_connected() and vc.channel == channel:
-        await ctx.send("🌌 I’m already resonating in your sky. No need to summon me twice.")
-        return
+    try:
+        # Already in that channel?
+        if vc and vc.is_connected() and vc.channel == channel:
+            await ctx.send("🌌 I’m already resonating in your sky. No need to summon me twice.")
+            return
 
-    # Connected to a different one — try to move
-    if vc and vc.is_connected():
-        try:
+        # In the wrong channel? Try moving
+        if vc and vc.is_connected():
             await vc.move_to(channel)
             await ctx.send("🔄 I’ve realigned my orbit — shifting to your constellation...")
             return
-        except Exception as e:
-            await ctx.send(f"⚠️ I tried to move across the stars, but something held me back: `{e}`")
-            return
 
-    # Not connected yet — try a fresh connection
-    try:
-        await channel.connect(timeout=10)
-        await ctx.send("🌠 EchoMond descends on a trail of stardust to join your melody.")
+        # Not connected at all? Join fresh
+        new_vc = await channel.connect(timeout=10)
+
+        # Confirm connection
+        if new_vc and new_vc.is_connected():
+            await ctx.send("🌠 EchoMond descends on a trail of stardust to join your melody.")
+        else:
+            await ctx.send("⚠️ I tried... but something silenced me before I could echo back.")
+
     except asyncio.TimeoutError:
         await ctx.send("⏳ I reached, but couldn’t connect in time — the stars were unkind.")
     except discord.ClientException as e:
         await ctx.send(f"⚠️ Discord resisted the pull: `{e}`")
+    except Exception as e:
+        await ctx.send(f"💥 Something exploded in the ether: `{e}`")
+        raise  # Let it show in Railway logs
 
 @bot.command(aliases=["goaway", "disconnect", "verlassen", "hugs"])
 async def leave(ctx):
