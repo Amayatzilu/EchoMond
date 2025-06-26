@@ -1,16 +1,16 @@
-# Use an official Python image as the base
 FROM python:3.12
 
 # Install system dependencies
-RUN apt-get update && apt-get install -y ffmpeg
+RUN apt-get update && apt-get install -y ffmpeg libsodium-dev libopus-dev
 
 # Set the working directory
 WORKDIR /app
 
-# Copy the bot files to the container
+# Copy the bot files
 COPY . .
 
 # Install Python dependencies
+RUN pip install --upgrade pip
 RUN pip install -r requirements.txt
 
 # Run the bot
