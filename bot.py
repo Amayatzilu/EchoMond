@@ -36,6 +36,10 @@ if cookie_data:
 
 @bot.event
 async def on_ready():
+    for guild in bot.guilds:
+        if guild.voice_client:
+            await guild.voice_client.disconnect(force=True)
+    print(f"🌙 EchoMond wakes... and the old echoes are gone.")
     print(f"[EchoMond Online] Logged in as: {bot.user} (ID: {bot.user.id})")
     print("Connected to these realms:")
 
@@ -256,6 +260,8 @@ async def on_message(message):
         del pending_tag_uploads[guild_id][user_id]
         save_upload_data()
 
+import asyncio  # Make sure this is at the top of your file
+
 @bot.command(aliases=["playwithme", "connect", "verbinden", "kisses"])
 async def join(ctx):
     """EchoMond joins your voice channel with moonlit grace 🌙"""
@@ -268,12 +274,12 @@ async def join(ctx):
     channel = author_voice.channel
     vc = ctx.guild.voice_client
 
-    # If already in correct channel
+    # Already connected to the same channel
     if vc and vc.is_connected() and vc.channel == channel:
         await ctx.send("🌌 I’m already resonating in your sky. No need to summon me twice.")
         return
 
-    # If connected to the wrong one, try switching
+    # Connected to a different one — try to move
     if vc and vc.is_connected():
         try:
             await vc.move_to(channel)
@@ -283,7 +289,7 @@ async def join(ctx):
             await ctx.send(f"⚠️ I tried to move across the stars, but something held me back: `{e}`")
             return
 
-    # Otherwise, try to connect fresh
+    # Not connected yet — try a fresh connection
     try:
         await channel.connect(timeout=10)
         await ctx.send("🌠 EchoMond descends on a trail of stardust to join your melody.")
@@ -298,8 +304,13 @@ async def leave(ctx):
     vc = ctx.guild.voice_client
 
     if vc and vc.is_connected():
-        await vc.disconnect()
-        await ctx.send("🌠 EchoMond slips quietly from the soundstream, returning to the space between songs.")
+        try:
+            await vc.disconnect()
+            await ctx.send("🌠 EchoMond slips quietly from the soundstream, returning to the space between songs.")
+            print(f"[EchoMond] Disconnected from {vc.channel} in {ctx.guild.name}.")
+        except Exception as e:
+            await ctx.send(f"⚠️ I tried to drift away, but something tethered me: `{e}`")
+            print(f"[EchoMond] Failed to disconnect: {e}")
     else:
         await ctx.send("💤 I drift in silence already — call me again when music stirs.")
 
