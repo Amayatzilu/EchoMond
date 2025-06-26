@@ -1,8 +1,13 @@
 FROM python:3.12
 
 # Install system dependencies
-RUN apt-get update && apt-get install -y ffmpeg libsodium-dev libopus-dev
-
+RUN apt-get update && apt-get install -y \
+    ffmpeg \
+    libopus-dev \
+    libsodium-dev \
+    pulseaudio \
+    alsa-utils \
+    libasound2-dev
 # Set the working directory
 WORKDIR /app
 
