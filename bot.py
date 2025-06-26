@@ -34,6 +34,16 @@ if cookie_data:
     with open(cookies_path, "w") as f:
         f.write(cookie_data)
 
+@bot.event
+async def on_ready():
+    print(f"[EchoMond Online] Logged in as: {bot.user} (ID: {bot.user.id})")
+    print("Connected to these realms:")
+
+    for guild in bot.guilds:
+        print(f"— {guild.name} (ID: {guild.id})")
+
+    print("🌌 EchoMond floats through the stars, listening for your signal.")
+
 @bot.command(aliases=["lost", "helfen"])
 async def help(ctx):
     """EchoMond's celestial help command – quiet, poetic, cosmic."""
@@ -258,17 +268,22 @@ async def join(ctx):
     channel = author_voice.channel
     vc = ctx.guild.voice_client
 
-    if vc and vc.channel == channel and vc.is_connected():
+    # If already in correct channel
+    if vc and vc.is_connected() and vc.channel == channel:
         await ctx.send("🌌 I’m already resonating in your sky. No need to summon me twice.")
         return
 
+    # If connected to the wrong one, try switching
     if vc and vc.is_connected():
         try:
-            await vc.disconnect(force=True)
+            await vc.move_to(channel)
             await ctx.send("🔄 I’ve realigned my orbit — shifting to your constellation...")
+            return
         except Exception as e:
-            await ctx.send(f"⚠️ I tried to break free, but something pulled me back: `{e}`")
+            await ctx.send(f"⚠️ I tried to move across the stars, but something held me back: `{e}`")
+            return
 
+    # Otherwise, try to connect fresh
     try:
         await channel.connect(timeout=10)
         await ctx.send("🌠 EchoMond descends on a trail of stardust to join your melody.")
