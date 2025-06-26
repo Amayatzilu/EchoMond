@@ -384,9 +384,15 @@ async def play_next(ctx):
                 os.remove(song_url)
             except Exception as e:
                 print(f"[Cleanup Error] Could not delete file: {e}")
-        asyncio.run_coroutine_threadsafe(play_next(ctx), bot.loop)
+        asyncio.create_task(play_next(ctx))
 
+    if vc and vc.is_connected():
     vc.play(discord.FFmpegPCMAudio(song_url, **ffmpeg_options), after=after_play)
+    vc.source = discord.PCMVolumeTransformer(vc.source, volume_levels_by_guild[guild_id])
+else:
+    await ctx.send("💥 EchoMond lost connection mid-orbit. Please call `!join` again.")
+    return
+
     vc.source = discord.PCMVolumeTransformer(vc.source, volume_levels_by_guild[guild_id])
 
     def cosmic_progress_bar(current, total, segments=10):
