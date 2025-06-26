@@ -3,8 +3,8 @@ FROM python:3.12
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
     ffmpeg \
-    libopus-dev \
-    libsodium-dev \
+    libopus0 \
+    libsodium23 \
     pulseaudio \
     alsa-utils \
     libasound2-dev

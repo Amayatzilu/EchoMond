@@ -12,6 +12,8 @@ from discord.ui import View, Select, Button
 from discord import Interaction
 from datetime import datetime
 
+asyncio.set_event_loop_policy(asyncio.DefaultEventLoopPolicy())
+
 # 🌌 EchoMond: Cosmic Edition
 TOKEN = os.getenv("TOKEN")
 
