@@ -1,5 +1,2 @@
-py-cord>=2.6.1
-yt-dlp>=2025.02.19
-python-dotenv
-mutagen
-pynacl
+discord.py>=2.3.2
+yt_dlp>=2024.4.9
