@@ -252,7 +252,6 @@ async def help(ctx):
         def __init__(self):
             super().__init__(timeout=60)
             dropdown = HelpDropdown()
-            dropdown.view = self
             self.add_item(dropdown)
 
     intro_embed = discord.Embed(
@@ -370,7 +369,7 @@ async def play(ctx, url: str = None):
 
 async def play_next(ctx):
     guild_id = ctx.guild.id
-    vc = ctx.voice_client or ctx.guild.voice_client  # 🌌 Fallback in case context is stale
+    vc = ctx.voice_client or ctx.guild.voice_client
 
     if not vc or not vc.is_connected():
         await ctx.send("🔇 I’m untethered from sound — use `!join` to bring me into your sky.")
@@ -398,6 +397,7 @@ async def play_next(ctx):
     except IndexError:
         await ctx.send("⚠️ The queue vanished mid-flight. EchoMond is puzzled.")
         return
+
     is_temp_youtube = False
 
     if isinstance(song_data, tuple):
@@ -430,13 +430,17 @@ async def play_next(ctx):
                 os.remove(song_url)
             except Exception as e:
                 print(f"[Cleanup Error] Could not delete file: {e}")
-        asyncio.create_task(play_next(ctx))
+        # Only continue if still connected and queue has songs
+        if ctx.guild.voice_client and song_queue_by_guild[guild_id]:
+            bot.loop.create_task(play_next(ctx))
+        elif not song_queue_by_guild[guild_id]:
+            coro = ctx.send("🌌 The last echo fades... the stardust settles. The queue is empty.")
+            bot.loop.create_task(coro)
 
     if vc and vc.is_connected():
         vc.play(discord.FFmpegPCMAudio(song_url, **ffmpeg_options), after=after_play)
         vol = volume_levels_by_guild.get(guild_id, 1.0)
         vc.source = discord.PCMVolumeTransformer(vc.source, volume=vol if vol > 0 else 1.0)
-
     else:
         await ctx.send("💥 EchoMond lost connection mid-orbit. Please call `!join` again.")
         return
@@ -458,7 +462,6 @@ async def play_next(ctx):
     message = await ctx.send(embed=embed)
     last_now_playing_message_by_guild[guild_id] = message
 
-    # Periodic update (unless high-usage)
     if duration and not is_high_usage:
         for second in range(1, duration + 1):
             if second % 10 == 0 or second == duration:
@@ -471,7 +474,6 @@ async def play_next(ctx):
                     pass
             await asyncio.sleep(1)
 
-        # Final phase shift
         try:
             embed.title = "🌌 Fadeout"
             embed.description = f"**{song_title}** drifts into cosmic silence."
