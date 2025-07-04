@@ -104,8 +104,11 @@ load_upload_data()
 @bot.event
 async def on_ready():
     for guild in bot.guilds:
-        if guild.voice_client:
-            await guild.voice_client.disconnect(force=True)
+        vc = guild.voice_client
+        if vc and vc.is_connected():
+            await vc.disconnect(force=True)
+            print(f"🧹 Disconnected stale voice connection in: {guild.name} ({guild.id})")
+
     print(f"🌙 EchoMond wakes... and the old echoes are gone.")
     print(f"[EchoMond Online] Logged in as: {bot.user} (ID: {bot.user.id})")
     print("Connected to these realms:")
@@ -243,6 +246,7 @@ async def help(ctx):
                 embed.description = (
                     "🔗 **!join** – Invite EchoMond into your channel\n"
                     "🚪 **!leave** – Let him slip quietly away\n"
+                    "🧼 **!cleanvoices** – Break lingering echoes and rinse away ghostly connections\n"
                     "📖 **!help** – Reopen this cosmic guide at any time"
                 )
 
@@ -321,6 +325,17 @@ async def leave(ctx):
             print(f"[EchoMond] Failed to disconnect: {e}")
     else:
         await ctx.send("💤 I drift in silence already — call me again when music stirs.")
+
+@bot.command(aliases=["rinse", "purgeghosts", "reclaimstars"])
+async def cleanvoices(ctx):
+    """Force EchoMond to release all ghostly voice connections."""
+    count = 0
+    for guild in bot.guilds:
+        vc = guild.voice_client
+        if vc and vc.is_connected():
+            await vc.disconnect(force=True)
+            count += 1
+    await ctx.send(f"🧼 EchoMond purged `{count}` phantom voice connection(s). All echoes... *rinsed.* 💫")
 
 # ========== PLAYBACK ==========
 
